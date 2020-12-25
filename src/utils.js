@@ -1,8 +1,34 @@
 import * as React from "react";
 
+// to call multiple fns at once
+const callAll = (...fns) => (...args) => fns.forEach((fn) => fn?.(args));
+
+const API = "https://www.breakingbadapi.com/api/";
+
+// fetcher is being used to fetch characters and quotes.
+async function fetcher(name = "", character = true) {
+  let url = API + (character ? `characters?name=` : `quote?author=`) + name;
+
+  return fetch(url, {
+    headers: {
+      "content-type": "application/json",
+      Accept: "application/json",
+    },
+  }).then(async (response) => {
+    try {
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      return Promise.reject(new Error(`Error occured: ${error}`));
+    }
+  });
+}
+
+// used so that we dont call dispatch after component has been unmounted
 function useSafeDispatch(dispatch) {
   const mounted = React.useRef(false);
 
+  // Using layouteffect and cleanups to set mounted
   React.useLayoutEffect(() => {
     mounted.current = true;
     return () => (mounted.current = false);
@@ -14,6 +40,7 @@ function useSafeDispatch(dispatch) {
   );
 }
 
+// generic reducer for async data fetch and errors
 function asyncReducer(state, action) {
   switch (action.type) {
     case "pending": {
@@ -31,12 +58,13 @@ function asyncReducer(state, action) {
   }
 }
 
+// hook to use fetcher and return data along with memoized fns to call fetcher
 function useAsync(initialState = {}) {
   const [state, unsafeDispatch] = React.useReducer(asyncReducer, {
     status: "idle",
     data: null,
     error: null,
-    ...initialState
+    ...initialState,
   });
 
   const dispatch = useSafeDispatch(unsafeDispatch);
@@ -73,8 +101,36 @@ function useAsync(initialState = {}) {
     error,
     status,
     data,
-    run
+    run,
   };
 }
 
-export { useAsync };
+// hook to use localStorage as state container, with key change support
+function useLocalStorageState(
+  key,
+  defaultValue = "",
+  { serialize = JSON.stringify, deserialize = JSON.parse } = {}
+) {
+  const [state, setState] = React.useState(() => {
+    const valueInLocalStorage = window.localStorage.getItem(key);
+    if (valueInLocalStorage) {
+      return deserialize(valueInLocalStorage);
+    }
+    return typeof defaultValue === "function" ? defaultValue() : defaultValue;
+  });
+
+  const prevKeyRef = React.useRef(key);
+
+  React.useEffect(() => {
+    const prevKey = prevKeyRef.current;
+    if (prevKey !== key) {
+      window.localStorage.removeItem(prevKey);
+    }
+    prevKeyRef.current = key;
+    window.localStorage.setItem(key, serialize(state));
+  }, [key, state, serialize]);
+
+  return [state, setState];
+}
+
+export { callAll, fetcher, useAsync, useLocalStorageState };
